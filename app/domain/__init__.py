@@ -17,6 +17,13 @@ from app.domain.auth import (
     UserResponse,
     UserUpdate,
 )
+from app.domain.patient import (
+    Patient,
+    PatientBase,
+    PatientCreate,
+    PatientResponse,
+    PatientUpdate,
+)
 
 __all__ = [
     # Models
@@ -24,6 +31,7 @@ __all__ = [
     "Permission",
     "RolePermission",
     "User",
+    "Patient",
     # Schemas
     "CustomBaseModel",
     "RoleBase",
@@ -38,4 +46,8 @@ __all__ = [
     "UserLogin",
     "UserResponse",
     "TokenResponse",
+    "PatientBase",
+    "PatientCreate",
+    "PatientUpdate",
+    "PatientResponse",
 ]

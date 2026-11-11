@@ -90,3 +90,4 @@ class User(Base):
     )
 
     role = relationship("Role", back_populates="users")
+    patient = relationship("Patient", back_populates="user", uselist=False)

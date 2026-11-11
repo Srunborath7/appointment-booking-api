@@ -11,6 +11,7 @@ from alembic import context
 from app.core.config import settings
 from app.core.database import Base
 import app.domain.auth.model  # noqa: F401 - Register models with Base.metadata
+import app.domain.patient.model  # noqa: F401 - Register patient model with Base.metadata
 
 
 def normalize_database_url(url: str) -> str:
