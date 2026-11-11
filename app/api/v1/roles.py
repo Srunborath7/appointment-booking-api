@@ -8,7 +8,12 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.enum import RoleName
 from app.core.exceptions import ConflictError, NotFoundError
-from app.core.permissions import assign_all_permissions_to_role, seed_permissions
+from app.core.permissions import (
+    ROLE_PERMISSIONS_MAPPING,
+    assign_all_permissions_to_role,
+    assign_permissions_to_role_by_codenames,
+    seed_permissions,
+)
 from app.core.responses import app_success
 from app.domain.auth import (
     Permission,
@@ -251,15 +256,15 @@ async def detach_permission_from_role(
 
 @router.post("/seed-defaults")
 async def seed_default_roles_and_permissions(db: AsyncSession = Depends(get_db)):
-    """Seed initial permissions and standard roles (super_admin, admin, staff, teacher, student)."""
+    """Seed initial permissions and standard roles (admin, doctor, nurse, cashier)."""
     await seed_permissions(db)
 
     default_roles = [
-        (RoleName.SUPER_ADMIN.value, "Super administrator with full access"),
-        (RoleName.ADMIN.value, "Platform administrator"),
-        (RoleName.STAFF.value, "Staff member"),
-        (RoleName.TEACHER.value, "Teacher / Service Provider"),
-        (RoleName.STUDENT.value, "Student / Client"),
+        (RoleName.ADMIN.value, "Platform and clinic administrator with full access"),
+        (RoleName.DOCTOR.value, "Medical Doctor - consultations and appointments"),
+        (RoleName.NURSE.value, "Nurse - patient care, triage, and scheduling"),
+        (RoleName.CASHIER.value, "Cashier - billing, invoicing, and payments"),
+        (RoleName.PATIENT.value, "Patient / Client booking appointments"),
     ]
 
     created = []
@@ -273,10 +278,14 @@ async def seed_default_roles_and_permissions(db: AsyncSession = Depends(get_db))
             await db.refresh(role)
             created.append(r_name)
 
-    await assign_all_permissions_to_role(db, RoleName.SUPER_ADMIN.value)
-    await assign_all_permissions_to_role(db, RoleName.ADMIN.value)
+    # Assign permissions according to mapping
+    for role_name, mapping in ROLE_PERMISSIONS_MAPPING.items():
+        if mapping == "ALL":
+            await assign_all_permissions_to_role(db, role_name)
+        else:
+            await assign_permissions_to_role_by_codenames(db, role_name, mapping)
 
     return app_success(
-        msg="Default roles and permissions seeded successfully",
+        msg="Roles (admin, doctor, nurse, cashier) and permissions seeded successfully",
         data={"created_roles": created},
     )

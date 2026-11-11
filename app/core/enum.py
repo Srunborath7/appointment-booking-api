@@ -15,11 +15,11 @@ class StatusCode(IntEnum):
     INTERNAL_SERVER_ERROR = 500
 
 class RoleName(str, Enum):
-    SUPER_ADMIN = "super_admin"
     ADMIN = "admin"
-    STAFF = "staff"
-    TEACHER = "teacher"
-    STUDENT = "student"
+    DOCTOR = "doctor"
+    NURSE = "nurse"
+    CASHIER = "cashier"
+    PATIENT = "patient"
 
 class AdminStatus(str, Enum):
     active = "active"
