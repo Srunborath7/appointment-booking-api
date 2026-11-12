@@ -1,109 +1,43 @@
-import uuid
 from typing import List, Optional
+import uuid
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from app.core.database import get_db
-from app.core.enum import RoleName
-from app.core.exceptions import ConflictError, NotFoundError
-from app.core.permissions import (
-    ROLE_PERMISSIONS_MAPPING,
-    assign_all_permissions_to_role,
-    assign_permissions_to_role_by_codenames,
-    seed_permissions,
-)
 from app.core.responses import app_success
-from app.domain.auth import (
-    Permission,
-    PermissionResponse,
-    Role,
-    RoleCreate,
-    RolePermission,
-    RoleResponse,
-)
+from app.domain.auth import RoleCreate
+from app.services import RoleService, get_role_service
 
 router = APIRouter(prefix="/roles", tags=["Roles & Permissions"])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_role(payload: RoleCreate, db: AsyncSession = Depends(get_db)):
+async def create_role(
+    payload: RoleCreate,
+    role_service: RoleService = Depends(get_role_service),
+):
     """Create a new role with optional permission assignments."""
-    existing_stmt = select(Role).where(Role.name == payload.name)
-    existing_res = await db.execute(existing_stmt)
-    if existing_res.scalar_one_or_none():
-        raise ConflictError(f"Role '{payload.name}' already exists")
-
-    new_role = Role(name=payload.name, description=payload.description)
-    db.add(new_role)
-    await db.commit()
-    await db.refresh(new_role)
-
-    # Assign initial permissions if supplied
-    if payload.permission_ids:
-        for perm_id in payload.permission_ids:
-            # Check permission exists
-            p_stmt = select(Permission).where(Permission.id == perm_id)
-            if (await db.execute(p_stmt)).scalar_one_or_none():
-                db.add(RolePermission(role_id=new_role.id, permission_id=perm_id))
-        await db.commit()
-
+    data = await role_service.create_role(payload)
     return app_success(
         msg="Role created successfully",
         code=status.HTTP_201_CREATED,
-        data=RoleResponse.model_validate(new_role).model_dump(mode="json"),
+        data=data,
     )
 
 
 @router.get("")
-async def list_roles(db: AsyncSession = Depends(get_db)):
+async def list_roles(role_service: RoleService = Depends(get_role_service)):
     """List all configured roles."""
-    stmt = (
-        select(Role)
-        .options(
-            selectinload(Role.role_permissions).selectinload(RolePermission.permission)
-        )
-        .order_by(Role.name)
-    )
-    res = await db.execute(stmt)
-    roles = res.scalars().all()
-
-    data = []
-    for r in roles:
-        role_dict = RoleResponse.model_validate(r).model_dump(mode="json")
-        role_dict["permissions"] = [
-            PermissionResponse.model_validate(rp.permission).model_dump(mode="json")
-            for rp in r.role_permissions
-            if rp.permission
-        ]
-        data.append(role_dict)
-
+    data = await role_service.list_roles()
     return app_success(data=data)
 
 
 @router.get("/{role_id}")
-async def get_role_by_id(role_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_role_by_id(
+    role_id: uuid.UUID,
+    role_service: RoleService = Depends(get_role_service),
+):
     """Get single role details along with its assigned permissions."""
-    stmt = (
-        select(Role)
-        .options(
-            selectinload(Role.role_permissions).selectinload(RolePermission.permission)
-        )
-        .where(Role.id == role_id)
-    )
-    res = await db.execute(stmt)
-    role = res.scalar_one_or_none()
-    if not role:
-        raise NotFoundError(f"Role with id '{role_id}' not found")
-
-    role_dict = RoleResponse.model_validate(role).model_dump(mode="json")
-    role_dict["permissions"] = [
-        PermissionResponse.model_validate(rp.permission).model_dump(mode="json")
-        for rp in role.role_permissions
-        if rp.permission
-    ]
-    return app_success(data=role_dict)
+    data = await role_service.get_role_by_id(role_id)
+    return app_success(data=data)
 
 
 @router.put("/{role_id}")
@@ -111,45 +45,23 @@ async def update_role(
     role_id: uuid.UUID,
     name: Optional[str] = None,
     description: Optional[str] = None,
-    db: AsyncSession = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service),
 ):
     """Update role metadata."""
-    stmt = select(Role).where(Role.id == role_id)
-    res = await db.execute(stmt)
-    role = res.scalar_one_or_none()
-    if not role:
-        raise NotFoundError(f"Role with id '{role_id}' not found")
-
-    if name:
-        # Check uniqueness if name changed
-        if name != role.name:
-            dup_stmt = select(Role).where(Role.name == name)
-            if (await db.execute(dup_stmt)).scalar_one_or_none():
-                raise ConflictError(f"Role name '{name}' already exists")
-        role.name = name
-
-    if description is not None:
-        role.description = description
-
-    await db.commit()
-    await db.refresh(role)
+    data = await role_service.update_role(role_id=role_id, name=name, description=description)
     return app_success(
         msg="Role updated successfully",
-        data=RoleResponse.model_validate(role).model_dump(mode="json"),
+        data=data,
     )
 
 
 @router.delete("/{role_id}")
-async def delete_role(role_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def delete_role(
+    role_id: uuid.UUID,
+    role_service: RoleService = Depends(get_role_service),
+):
     """Delete a role by ID."""
-    stmt = select(Role).where(Role.id == role_id)
-    res = await db.execute(stmt)
-    role = res.scalar_one_or_none()
-    if not role:
-        raise NotFoundError(f"Role with id '{role_id}' not found")
-
-    await db.delete(role)
-    await db.commit()
+    await role_service.delete_role(role_id)
     return app_success(msg="Role deleted successfully")
 
 
@@ -157,17 +69,12 @@ async def delete_role(role_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 # Role Permission Management Endpoints
 # ---------------------------------------------------------------------------
 @router.get("/{role_id}/permissions")
-async def get_role_permissions(role_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_role_permissions(
+    role_id: uuid.UUID,
+    role_service: RoleService = Depends(get_role_service),
+):
     """List all permissions assigned to a role."""
-    stmt = (
-        select(Permission)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .where(RolePermission.role_id == role_id)
-        .order_by(Permission.group, Permission.codename)
-    )
-    res = await db.execute(stmt)
-    perms = res.scalars().all()
-    data = [PermissionResponse.model_validate(p).model_dump(mode="json") for p in perms]
+    data = await role_service.get_role_permissions(role_id)
     return app_success(data=data)
 
 
@@ -175,33 +82,10 @@ async def get_role_permissions(role_id: uuid.UUID, db: AsyncSession = Depends(ge
 async def assign_permissions_to_role(
     role_id: uuid.UUID,
     permission_ids: List[uuid.UUID],
-    db: AsyncSession = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service),
 ):
     """Replace/sync permissions for a given role with the provided list of permission IDs."""
-    role_stmt = select(Role).where(Role.id == role_id)
-    role_res = await db.execute(role_stmt)
-    if not role_res.scalar_one_or_none():
-        raise NotFoundError(f"Role with id '{role_id}' not found")
-
-    # Fetch existing role permissions
-    rp_stmt = select(RolePermission).where(RolePermission.role_id == role_id)
-    existing_rps = (await db.execute(rp_stmt)).scalars().all()
-    existing_map = {rp.permission_id: rp for rp in existing_rps}
-
-    # Delete unselected
-    for perm_id, rp_obj in existing_map.items():
-        if perm_id not in permission_ids:
-            await db.delete(rp_obj)
-
-    # Add newly selected
-    for perm_id in permission_ids:
-        if perm_id not in existing_map:
-            # Verify permission exists
-            p_check = select(Permission).where(Permission.id == perm_id)
-            if (await db.execute(p_check)).scalar_one_or_none():
-                db.add(RolePermission(role_id=role_id, permission_id=perm_id))
-
-    await db.commit()
+    await role_service.sync_role_permissions(role_id, permission_ids)
     return app_success(msg="Role permissions synchronized successfully")
 
 
@@ -209,83 +93,36 @@ async def assign_permissions_to_role(
 async def attach_permission_to_role(
     role_id: uuid.UUID,
     permission_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service),
 ):
     """Attach a single permission to a role."""
-    # Verify role
-    role_stmt = select(Role).where(Role.id == role_id)
-    if not (await db.execute(role_stmt)).scalar_one_or_none():
-        raise NotFoundError("Role not found")
-
-    # Verify permission
-    perm_stmt = select(Permission).where(Permission.id == permission_id)
-    if not (await db.execute(perm_stmt)).scalar_one_or_none():
-        raise NotFoundError("Permission not found")
-
-    # Check if already attached
-    rp_stmt = select(RolePermission).where(
-        RolePermission.role_id == role_id, RolePermission.permission_id == permission_id
+    attached = await role_service.attach_permission(role_id, permission_id)
+    msg = (
+        "Permission attached to role successfully"
+        if attached
+        else "Permission is already assigned to this role"
     )
-    if (await db.execute(rp_stmt)).scalar_one_or_none():
-        return app_success(msg="Permission is already assigned to this role")
-
-    db.add(RolePermission(role_id=role_id, permission_id=permission_id))
-    await db.commit()
-    return app_success(msg="Permission attached to role successfully")
+    return app_success(msg=msg)
 
 
 @router.delete("/{role_id}/permissions/{permission_id}")
 async def detach_permission_from_role(
     role_id: uuid.UUID,
     permission_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service),
 ):
     """Detach a single permission from a role."""
-    rp_stmt = select(RolePermission).where(
-        RolePermission.role_id == role_id, RolePermission.permission_id == permission_id
-    )
-    res = await db.execute(rp_stmt)
-    rp = res.scalar_one_or_none()
-    if not rp:
-        raise NotFoundError("Permission assignment not found for this role")
-
-    await db.delete(rp)
-    await db.commit()
+    await role_service.detach_permission(role_id, permission_id)
     return app_success(msg="Permission detached from role successfully")
 
 
 @router.post("/seed-defaults")
-async def seed_default_roles_and_permissions(db: AsyncSession = Depends(get_db)):
-    """Seed initial permissions and standard roles (admin, doctor, nurse, cashier)."""
-    await seed_permissions(db)
-
-    default_roles = [
-        (RoleName.ADMIN.value, "Platform and clinic administrator with full access"),
-        (RoleName.DOCTOR.value, "Medical Doctor - consultations and appointments"),
-        (RoleName.NURSE.value, "Nurse - patient care, triage, and scheduling"),
-        (RoleName.CASHIER.value, "Cashier - billing, invoicing, and payments"),
-        (RoleName.PATIENT.value, "Patient / Client booking appointments"),
-    ]
-
-    created = []
-    for r_name, r_desc in default_roles:
-        stmt = select(Role).where(Role.name == r_name)
-        role = (await db.execute(stmt)).scalar_one_or_none()
-        if not role:
-            role = Role(name=r_name, description=r_desc)
-            db.add(role)
-            await db.commit()
-            await db.refresh(role)
-            created.append(r_name)
-
-    # Assign permissions according to mapping
-    for role_name, mapping in ROLE_PERMISSIONS_MAPPING.items():
-        if mapping == "ALL":
-            await assign_all_permissions_to_role(db, role_name)
-        else:
-            await assign_permissions_to_role_by_codenames(db, role_name, mapping)
-
+async def seed_default_roles_and_permissions(
+    role_service: RoleService = Depends(get_role_service),
+):
+    """Seed initial permissions and standard roles (admin, doctor, nurse, cashier, patient)."""
+    data = await role_service.seed_defaults()
     return app_success(
-        msg="Roles (admin, doctor, nurse, cashier) and permissions seeded successfully",
-        data={"created_roles": created},
+        msg="Roles (admin, doctor, nurse, cashier, patient) and permissions seeded successfully",
+        data=data,
     )
