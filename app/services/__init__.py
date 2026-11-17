@@ -2,11 +2,12 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.repositories import AuthRepository, PatientRepository, RoleRepository
+from app.repositories import AuthRepository, PatientRepository, RoleRepository, RoomRepository
 from app.services.auth_service import AuthService
 from app.services.base.base_service import BaseService
 from app.services.patient_service import PatientService
 from app.services.role_service import RoleService
+from app.services.room_service import RoomService
 from app.services.user_service import UserService
 
 
@@ -21,6 +22,10 @@ def get_role_repository(db: AsyncSession = Depends(get_db)) -> RoleRepository:
 
 def get_patient_repository(db: AsyncSession = Depends(get_db)) -> PatientRepository:
     return PatientRepository(db)
+
+
+def get_room_repository(db: AsyncSession = Depends(get_db)) -> RoomRepository:
+    return RoomRepository(db)
 
 
 # Service Providers
@@ -55,17 +60,27 @@ def get_patient_service(
     return PatientService(patient_repo=patient_repo, auth_repo=auth_repo, db=db)
 
 
+def get_room_service(
+    room_repo: RoomRepository = Depends(get_room_repository),
+    db: AsyncSession = Depends(get_db),
+) -> RoomService:
+    return RoomService(room_repo=room_repo, db=db)
+
+
 __all__ = [
     "BaseService",
     "AuthService",
     "UserService",
     "RoleService",
     "PatientService",
+    "RoomService",
     "get_auth_repository",
     "get_role_repository",
     "get_patient_repository",
+    "get_room_repository",
     "get_auth_service",
     "get_user_service",
     "get_role_service",
     "get_patient_service",
+    "get_room_service",
 ]

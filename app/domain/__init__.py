@@ -24,6 +24,13 @@ from app.domain.patient import (
     PatientResponse,
     PatientUpdate,
 )
+from app.domain.room import (
+    Room,
+    RoomBase,
+    RoomCreate,
+    RoomResponse,
+    RoomUpdate,
+)
 
 __all__ = [
     # Models
@@ -32,6 +39,7 @@ __all__ = [
     "RolePermission",
     "User",
     "Patient",
+    "Room",
     # Schemas
     "CustomBaseModel",
     "RoleBase",
@@ -50,4 +58,8 @@ __all__ = [
     "PatientCreate",
     "PatientUpdate",
     "PatientResponse",
+    "RoomBase",
+    "RoomCreate",
+    "RoomUpdate",
+    "RoomResponse",
 ]
